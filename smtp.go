@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/mail"
 	"net/smtp"
@@ -13,7 +14,7 @@ import (
 type Mail struct {
 	Connection Connection
 	From       mail.Address
-	To         []string
+	Recipients []string
 	Message    Message
 }
 
@@ -26,8 +27,19 @@ type Connection struct {
 
 type Message struct {
 	Subject     string
+	Body        MessageBody
+	Attachments []Attachment
+}
+
+type MessageBody struct {
 	ContentType string
 	Body        string
+}
+
+type Attachment struct {
+	Filename    string
+	ContentType string
+	Body        []byte
 }
 
 func sendSmtp(m Mail) {
@@ -35,15 +47,18 @@ func sendSmtp(m Mail) {
 
 	auth := smtp.PlainAuth("", m.Connection.Username, m.Connection.Password, m.Connection.Host)
 
+	buf := new(bytes.Buffer)
+	mpart := multipart.NewWriter(buf)
+
 	headers := make(http.Header)
 	headers.Set("From", m.From.String())
 	headers.Set("Subject", m.Message.Subject)
-	headers.Set("Content-Type", m.Message.ContentType)
+	headers.Set("Content-Type", fmt.Sprintf("multipart/mixed; boundary=%s", mpart.Boundary()))
 
-	buf := new(bytes.Buffer)
 	headers.Write(buf)
-	buf.WriteString("\r\n")
-	buf.WriteString(m.Message.Body)
+	buf.WriteString("\n")
+	m.Message.WriteMultipart(buf, mpart)
+
 	Message := buf.Bytes()
 
 	tlsConfig := tls.Config{
@@ -79,8 +94,8 @@ func sendSmtp(m Mail) {
 		return
 	}
 
-	fmt.Println("Письма будут отправлены следующим получателям:", strings.Join(m.To, ","))
-	for _, to := range m.To {
+	fmt.Println("Письма будут отправлены следующим получателям:", strings.Join(m.Recipients, ","))
+	for _, to := range m.Recipients {
 		err = c.Rcpt(to)
 		if err != nil {
 			fmt.Println(err)
@@ -94,7 +109,7 @@ func sendSmtp(m Mail) {
 		return
 	}
 
-	fmt.Println("===============\n", string(Message), "\n===============")
+	fmt.Printf("===============\n%s===============\n\n", string(Message))
 	_, err = w.Write([]byte(Message))
 	if err != nil {
 		fmt.Println(err)

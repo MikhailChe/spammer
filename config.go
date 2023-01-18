@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 
 	"github.com/heetch/confita"
 	"github.com/heetch/confita/backend"
@@ -21,12 +22,10 @@ var exampleConfig = `connection:
 from:
   name: Василий Пупкин
   address: youremail@example.com
-to:
-  - mail2@example.com
-subject: Темя письма
-content-type: text/html; charset="utf-8"
-body: >
-  <html><body><h1>Сообщение</h1><h2>Которое</h2><h3>Нужно</h3><p>Отправить</p></body></html>
+to-file: файл-с-получателями.txt
+subject: Тема письма
+content-type: text/html; charset=utf-8
+body-file: файл-с-телом-письма.html
 `
 
 type Config struct {
@@ -40,10 +39,15 @@ type Config struct {
 		Name    string `config:"name,required"`
 		Address string `config:"addess,requried"`
 	} `config:"from"`
-	To          []string `config:"to,required"`
-	Subject     string   `config:"subject"`
-	ContentType string   `config:"content-type,required" yaml:"content-type"`
-	Body        string   `config:"body,required"`
+	ToFile      string `config:"to,required" yaml:"to-file"`
+	Subject     string `config:"subject"`
+	ContentType string `config:"content-type,required" yaml:"content-type"`
+	BodyFile    string `config:"body,required" yaml:"body-file"`
+	Attachments []struct {
+		File        string `config:"file,required" yaml:"file"`
+		Name        string `config:"name" yaml:"name"`
+		ContentType string `config:"content-type" yaml:"content-type"`
+	} `config:"attachments" yaml:"attachments"`
 }
 
 func loadConfig(into *Config, filename string) error {
@@ -55,8 +59,10 @@ func loadConfig(into *Config, filename string) error {
 	loader := confita.NewLoader(file.NewBackend(absPath))
 	err = loader.Load(context.Background(), into)
 	if err != nil {
-		var pathError error = &fs.PathError{}
-		if errors.Is(err, backend.ErrNotFound) || errors.As(err, &pathError) {
+		cause := errors.Cause(err)
+		fmt.Println(cause)
+		_, isPathError := cause.(*fs.PathError)
+		if cause == backend.ErrNotFound || isPathError {
 			fmt.Printf("Ожидал файл конфигурации %s, но не нашел его там. Создаю файл для примера. Его нужно будет исправить и запустить программу с теми же параметрами.\n", absPath)
 			exerr := os.WriteFile(absPath, []byte(exampleConfig), 0644)
 			if exerr != nil {

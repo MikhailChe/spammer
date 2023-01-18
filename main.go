@@ -1,12 +1,19 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
+	"mime/multipart"
+	"net/http"
 	"net/mail"
+	"net/textproto"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 func ERR(s any) {
@@ -15,16 +22,50 @@ func ERR(s any) {
 	os.Exit(1)
 }
 
+func (m *Message) WriteMultipart(buf io.Writer, mpart *multipart.Writer) error {
+	mainPartHeader := make(textproto.MIMEHeader)
+	mainPartHeader.Set("Content-Type", m.Body.ContentType)
+
+	part, err := mpart.CreatePart(mainPartHeader)
+	if err != nil {
+		return err
+	}
+
+	part.Write([]byte(m.Body.Body))
+
+	for _, att := range m.Attachments {
+		if err := attachmentAsPart(mpart, att); err != nil {
+			return err
+		}
+	}
+
+	return mpart.Close()
+}
+
+func attachmentAsPart(mm *multipart.Writer, a Attachment) error {
+	mimeHeaders := make(textproto.MIMEHeader)
+	mimeHeaders.Set("Content-Type", a.ContentType)
+	mimeHeaders.Set("Content-Transfer-Encoding", "base64")
+	mimeHeaders.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", a.Filename))
+	part, err := mm.CreatePart(mimeHeaders)
+	if err != nil {
+		return err
+	}
+
+	b64enc := base64.NewEncoder(base64.StdEncoding, part)
+	b64enc.Write(a.Body)
+
+	return nil
+}
+
 func main() {
 	var err error
 	var conf = new(Config)
 
-	configFile := flag.String("config", "", "Обязательный параметр. YAML файл с конфигурацией. Можно указать несуществующий файл, тогда программа создаст на его месте файл-пример, котоырй нужно будет отредактировать.")
-	bodyFile := flag.String("body-file", "", "Файл с телом сообщения. Порядок: берём тело из конфигурации (параметр body), если его нет - берём из указанного файла. Тело должно быть, либо в конфигурации, либо в отдельном файле")
-	toFile := flag.String("to-file", "", "Файл со списком получателей сообщения. По умолчанию берём список из конфигурации, если его нет - берём из указанного файла. Предполагается текстовый файл, где каждый email на новой строчке.")
+	configFile := flag.String("config", "config.yaml", "YAML файл с конфигурацией. Можно указать несуществующий файл, тогда программа создаст на его месте файл-пример, котоырй нужно будет отредактировать.")
 
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Использование: %s [-body-file путь/до/файла] [-to-file путь/до/файла] -config <путь/до/конфигурации.yaml>\n", os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), "Использование: %s -config [путь/до/конфигурации.yaml]\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 
@@ -34,8 +75,36 @@ func main() {
 		ERR("Нужно обязательно передать путь до файла конфигурации.")
 	}
 
-	if bodyFile != nil && len(*bodyFile) > 0 {
-		f, err := os.Open(*bodyFile)
+	err = loadConfig(conf, *configFile)
+	if err != nil {
+		ERR(err)
+	}
+
+	var body string
+	{
+		f, err := os.Open(conf.BodyFile)
+		if err != nil {
+			ERR(errors.Wrap(err, "Не могу открыть файл с телом письма"))
+		}
+		bb, err := io.ReadAll(f)
+		if err != nil {
+			ERR(err)
+		}
+		body = string(bb)
+		f.Close()
+	}
+
+	if len(body) == 0 {
+		ERR("Тело письма не должно быть пустым")
+	}
+
+	var attachments []Attachment
+
+	for _, attFile := range conf.Attachments {
+		if len(attFile.File) == 0 {
+			continue
+		}
+		f, err := os.Open(attFile.File)
 		if err != nil {
 			ERR(err)
 		}
@@ -43,34 +112,43 @@ func main() {
 		if err != nil {
 			ERR(err)
 		}
-		conf.Body = string(bb)
+		var filename string = attFile.Name
+		if len(filename) == 0 {
+			_, filename = filepath.Split(attFile.File)
+		}
+		var contentType string = attFile.ContentType
+		if len(contentType) == 0 {
+			contentType = http.DetectContentType(bb)
+		}
+		attachments = append(attachments, Attachment{filename, contentType, bb})
+		f.Close()
 	}
 
-	if toFile != nil && len(*toFile) > 0 {
-		f, err := os.Open(*toFile)
+	var recipients []string
+	{
+		f, err := os.Open(conf.ToFile)
 		if err != nil {
-			ERR(err)
+			ERR(errors.Wrap(err, "Не могу открыть файл со списком получаетелей"))
 		}
 		bb, err := io.ReadAll(f)
 		if err != nil {
 			ERR(err)
 		}
 		dirtyEmails := strings.Split(string(bb), "\n")
-		var emails []string
+
 		for _, email := range dirtyEmails {
 			email = strings.Trim(email, "\r\n\t")
 			email = strings.TrimSpace(email)
 			if email == "" {
 				continue
 			}
-			emails = append(emails, email)
+			recipients = append(recipients, email)
 		}
-		conf.To = emails
+		f.Close()
 	}
 
-	err = loadConfig(conf, *configFile)
-	if err != nil {
-		ERR(err)
+	if len(recipients) == 0 {
+		ERR("Нужно добавить хотя бы одного получателя")
 	}
 
 	sendSmtp(Mail{
@@ -84,11 +162,14 @@ func main() {
 			Name:    conf.From.Name,
 			Address: conf.From.Address,
 		},
-		To: conf.To,
+		Recipients: recipients,
 		Message: Message{
-			Subject:     conf.Subject,
-			ContentType: conf.ContentType,
-			Body:        conf.Body,
+			Subject: conf.Subject,
+			Body: MessageBody{
+				ContentType: conf.ContentType,
+				Body:        body,
+			},
+			Attachments: attachments,
 		},
 	})
 }
