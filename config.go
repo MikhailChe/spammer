@@ -15,8 +15,9 @@ import (
 )
 
 var exampleConfig = `connection:
-  host: smtp.yandex.ru
-  port: 465 # по умолчанию 465, расчёт на SSL/TLS SMTP
+  host: mail.rsvpu.ru
+  port: 25
+  ssl: false # выставить в true для нормальных серверов, вроде yandex или google
   user: здесь имя пользвоателя
   password: нужен пароль
 from:
@@ -42,6 +43,7 @@ type Config struct {
 		Port     int    `config:"port,required"`
 		User     string `config:"user,required"`
 		Password string `config:"password,required"`
+		SSL      bool   `config:"ssl" yaml:"ssl"`
 	} `config:"connection"`
 	From struct {
 		Name    string `config:"name,required"`
@@ -68,7 +70,6 @@ func loadConfig(into *Config, filename string) error {
 	err = loader.Load(context.Background(), into)
 	if err != nil {
 		cause := errors.Cause(err)
-		fmt.Println(cause)
 		_, isPathError := cause.(*fs.PathError)
 		if cause == backend.ErrNotFound || isPathError {
 			fmt.Printf("Ожидал файл конфигурации %s, но не нашел его там. Создаю файл для примера. Его нужно будет исправить и запустить программу с теми же параметрами.\n", absPath)

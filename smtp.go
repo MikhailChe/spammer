@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/mail"
 	"net/smtp"
@@ -23,6 +25,7 @@ type Connection struct {
 	Port     int
 	Username string
 	Password string
+	SSL      bool
 }
 
 type Message struct {
@@ -41,11 +44,35 @@ type Attachment struct {
 	ContentType string
 	Body        []byte
 }
+type loginAuth struct {
+	username, password string
+}
 
-func sendSmtp(m Mail) {
+func LoginAuth(username, password string) smtp.Auth {
+	return &loginAuth{username, password}
+}
+
+func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	return "LOGIN", []byte{}, nil
+}
+
+func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		switch string(fromServer) {
+		case "Username:":
+			return []byte(a.username), nil
+		case "Password:":
+			return []byte(a.password), nil
+		default:
+			return nil, errors.New("unkown fromServer")
+		}
+	}
+	return nil, nil
+}
+
+func sendSmtp(m Mail) error {
+	var err error
 	server := fmt.Sprintf("%s:%d", m.Connection.Host, m.Connection.Port)
-
-	auth := smtp.PlainAuth("", m.Connection.Username, m.Connection.Password, m.Connection.Host)
 
 	buf := new(bytes.Buffer)
 	mpart := multipart.NewWriter(buf)
@@ -66,68 +93,77 @@ func sendSmtp(m Mail) {
 		ServerName:         m.Connection.Host,
 	}
 
-	fmt.Println("Устанавливаю безопасное соединение по адресу", server)
-	conn, err := tls.Dial("tcp", server, &tlsConfig)
-	if err != nil {
-		fmt.Println(err)
-		return
+	var conn net.Conn
+	if m.Connection.SSL {
+		fmt.Println("Устанавливаю безопасное соединение по адресу", server)
+		conn, err = tls.Dial("tcp", server, &tlsConfig)
+		if err != nil {
+			return err
+		}
+	} else {
+		fmt.Println("Указан порт 25. Предполагаю, что соединение небезопасное. Устанавливаю соединение по адресу", server)
+		conn, err = net.Dial("tcp", server)
+		if err != nil {
+			return err
+		}
 	}
 
 	fmt.Println("Начинаю общение по SMTP")
 	c, err := smtp.NewClient(conn, m.Connection.Host)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	fmt.Println("Прохожу авторизацию")
+	auth := &loginAuth{m.Connection.Username, m.Connection.Password}
 	err = c.Auth(auth)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	fmt.Println("Отправляю письмо от", m.From.Address)
 	err = c.Mail(m.From.Address)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
-	fmt.Println("Письма будут отправлены следующим получателям:", strings.Join(m.Recipients, ","))
+	fmt.Println("Письма будут отправлены следующим получателям:", prettyPrintRecepients(m.Recipients))
 	for _, to := range m.Recipients {
 		err = c.Rcpt(to)
 		if err != nil {
-			fmt.Println(err)
-			return
+			return err
 		}
 	}
 
 	w, err := c.Data()
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	_, err = w.Write([]byte(Message))
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	err = w.Close()
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	fmt.Println("Закрываю соединение с SMTP сервером")
 
 	err = c.Quit()
 	if err != nil {
-		fmt.Println(err)
-		return
+		return err
 	}
 
 	fmt.Println("Сообщения отправлены")
+	return nil
+}
+
+func prettyPrintRecepients(s []string) string {
+	if len(s) > 10 {
+		return fmt.Sprintf("%s и ещё %d", strings.Join(s[:10], ","), len(s)-10)
+	}
+	return strings.Join(s, ",")
 }

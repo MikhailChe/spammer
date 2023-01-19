@@ -113,7 +113,7 @@ func main() {
 	for _, attFile := range conf.Attachments {
 		attFile.File, err = filepath.Abs(attFile.File)
 		if err != nil {
-			ERR(errors.Wrapf(err, "Проблемы с приложением %s", attFile.File))
+			ERR(err)
 		}
 		if len(attFile.File) == 0 {
 			continue
@@ -141,6 +141,11 @@ func main() {
 		f.Close()
 	}
 
+	// Получатели
+	conf.ToFile, err = filepath.Abs(conf.ToFile)
+	if err != nil {
+		ERR(err)
+	}
 	var recipients []string
 	{
 		f, err := os.Open(conf.ToFile)
@@ -153,11 +158,18 @@ func main() {
 		}
 		dirtyEmails := strings.Split(string(bb), "\n")
 
+		emailSet := map[string]struct{}{}
+
 		for _, email := range dirtyEmails {
 			email = strings.Trim(email, "\r\n\t")
 			email = strings.TrimSpace(email)
 			if email == "" {
 				continue
+			}
+			if _, exists := emailSet[email]; exists {
+				ERR(fmt.Sprintln("Найден дубликат почтового ящика в списке получателей:", email))
+			} else {
+				emailSet[email] = struct{}{}
 			}
 			recipients = append(recipients, email)
 		}
@@ -168,12 +180,13 @@ func main() {
 		ERR("Нужно добавить хотя бы одного получателя")
 	}
 
-	sendSmtp(Mail{
+	err = sendSmtp(Mail{
 		Connection: Connection{
 			Host:     conf.Connection.Host,
 			Port:     conf.Connection.Port,
 			Username: conf.Connection.User,
 			Password: conf.Connection.Password,
+			SSL:      conf.Connection.SSL,
 		},
 		From: mail.Address{
 			Name:    conf.From.Name,
@@ -189,6 +202,9 @@ func main() {
 			Attachments: attachments,
 		},
 	})
+	if err != nil {
+		ERR(err)
+	}
 
 	fmt.Println(`Приложение для отправки почты нескольким адресатам.
 Автор: Черноскутов Михаил <mikhail-chernoskutov@yandex.ru>`)
