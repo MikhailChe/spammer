@@ -46,7 +46,10 @@ func attachmentAsPart(mm *multipart.Writer, a Attachment) error {
 	mimeHeaders := make(textproto.MIMEHeader)
 	mimeHeaders.Set("Content-Type", a.ContentType)
 	mimeHeaders.Set("Content-Transfer-Encoding", "base64")
-	mimeHeaders.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", a.Filename))
+	filenameEscaped := a.Filename
+	filenameEscaped = strings.ReplaceAll(filenameEscaped, `\`, `\\`)
+	filenameEscaped = strings.ReplaceAll(filenameEscaped, `"`, `\"`)
+	mimeHeaders.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filenameEscaped))
 	part, err := mm.CreatePart(mimeHeaders)
 	if err != nil {
 		return err
@@ -80,6 +83,11 @@ func main() {
 		ERR(err)
 	}
 
+	// Body
+	conf.BodyFile, err = filepath.Abs(conf.BodyFile)
+	if err != nil {
+		ERR(err)
+	}
 	var body string
 	{
 		f, err := os.Open(conf.BodyFile)
@@ -96,29 +104,38 @@ func main() {
 
 	if len(body) == 0 {
 		ERR("Тело письма не должно быть пустым")
+	} else {
+		fmt.Println("Нашел тело письма в файле", conf.BodyFile)
 	}
 
+	// Attachments
 	var attachments []Attachment
-
 	for _, attFile := range conf.Attachments {
+		attFile.File, err = filepath.Abs(attFile.File)
+		if err != nil {
+			ERR(errors.Wrapf(err, "Проблемы с приложением %s", attFile.File))
+		}
 		if len(attFile.File) == 0 {
 			continue
 		}
 		f, err := os.Open(attFile.File)
 		if err != nil {
-			ERR(err)
+			ERR(errors.Wrap(err, "Не могу открыть файл с приложением"))
 		}
 		bb, err := io.ReadAll(f)
 		if err != nil {
-			ERR(err)
+			ERR(errors.Wrap(err, "Не могу прочитать файл с приложением"))
 		}
+		fmt.Println("Нашел приложение в файле", attFile.File)
 		var filename string = attFile.Name
 		if len(filename) == 0 {
 			_, filename = filepath.Split(attFile.File)
 		}
+		fmt.Println("В письме будет отображаться как", filename)
 		var contentType string = attFile.ContentType
 		if len(contentType) == 0 {
 			contentType = http.DetectContentType(bb)
+			fmt.Println("Автоматически определенный тип файла:", contentType)
 		}
 		attachments = append(attachments, Attachment{filename, contentType, bb})
 		f.Close()

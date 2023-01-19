@@ -109,7 +109,6 @@ func sendSmtp(m Mail) {
 		return
 	}
 
-	fmt.Printf("===============\n%s===============\n\n", string(Message))
 	_, err = w.Write([]byte(Message))
 	if err != nil {
 		fmt.Println(err)
