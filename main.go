@@ -189,4 +189,7 @@ func main() {
 			Attachments: attachments,
 		},
 	})
+
+	fmt.Println(`Приложение для отправки почты нескольким адресатам.
+Автор: Черноскутов Михаил <mikhail-chernoskutov@yandex.ru>`)
 }
