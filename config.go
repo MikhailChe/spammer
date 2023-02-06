@@ -51,7 +51,7 @@ type Config struct {
 	} `config:"from"`
 	ToFile      string `config:"to,required" yaml:"to-file"`
 	Subject     string `config:"subject"`
-	ContentType string `config:"content-type,required" yaml:"content-type"`
+	ContentType string `config:"content-type" yaml:"content-type"`
 	BodyFile    string `config:"body,required" yaml:"body-file"`
 	Attachments []struct {
 		File        string `config:"file,required" yaml:"file"`

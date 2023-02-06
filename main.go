@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -61,6 +62,35 @@ func attachmentAsPart(mm *multipart.Writer, a Attachment) error {
 	return nil
 }
 
+func splitHeadersBody(contentType string, msg string) (string, string) {
+	rnrn := strings.Index(msg, "\r\n\r\n")
+	nn := strings.Index(msg, "\n\n")
+
+	var firstSplit int = -1
+	if rnrn > 0 {
+		firstSplit = rnrn
+	}
+	if nn > 0 && nn < rnrn {
+		firstSplit = nn
+	}
+
+	if firstSplit < 0 {
+		return contentType, msg
+	}
+
+	tp := textproto.NewReader(bufio.NewReader(strings.NewReader(msg)))
+	headers, err := tp.ReadMIMEHeader()
+	if err != nil {
+		return contentType, msg
+	}
+	if len(headers.Get("Content-Type")) == 0 {
+		return contentType, msg
+	}
+	contentType = headers.Get("Content-Type")
+	msg = msg[firstSplit:]
+	return contentType, msg
+}
+
 func main() {
 	var err error
 	var conf = new(Config)
@@ -88,7 +118,7 @@ func main() {
 	if err != nil {
 		ERR(err)
 	}
-	var body string
+	var msgBody MessageBody
 	{
 		f, err := os.Open(conf.BodyFile)
 		if err != nil {
@@ -98,14 +128,31 @@ func main() {
 		if err != nil {
 			ERR(err)
 		}
-		body = string(bb)
 		f.Close()
+		msgBody.ContentType = conf.ContentType
+		msgBody.Body = string(bb)
+
+		if strings.HasSuffix(conf.BodyFile, ".mhtml") || strings.HasSuffix(conf.BodyFile, ".mht") {
+			msgBody.ContentType, msgBody.Body = splitHeadersBody(msgBody.ContentType, msgBody.Body)
+		}
+
+		if msgBody.ContentType == "" && (strings.HasSuffix(conf.BodyFile, ".html") || strings.HasSuffix(conf.BodyFile, ".htm")) {
+			msgBody.ContentType = "text/html"
+		}
+
+		if msgBody.ContentType == "" && strings.HasSuffix(conf.BodyFile, ".txt") {
+			msgBody.ContentType = "text/plain"
+		}
 	}
 
-	if len(body) == 0 {
+	if len(msgBody.Body) == 0 {
 		ERR("Тело письма не должно быть пустым")
 	} else {
 		fmt.Println("Нашел тело письма в файле", conf.BodyFile)
+	}
+
+	if len(msgBody.ContentType) == 0 {
+		ERR("Не получилось определить тип сообщения. Укажите его в параметре content-type. Например, text/plain или text/html")
 	}
 
 	// Attachments
@@ -194,11 +241,8 @@ func main() {
 		},
 		Recipients: recipients,
 		Message: Message{
-			Subject: conf.Subject,
-			Body: MessageBody{
-				ContentType: conf.ContentType,
-				Body:        body,
-			},
+			Subject:     conf.Subject,
+			Body:        msgBody,
 			Attachments: attachments,
 		},
 	})
