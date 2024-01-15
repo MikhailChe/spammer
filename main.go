@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -113,6 +114,10 @@ func main() {
 		ERR(err)
 	}
 
+	if conf.Delay != 0 {
+		fmt.Printf("Письма будут отправлены по одному с интервалом %v\n", conf.Delay)
+	}
+
 	// Body
 	conf.BodyFile, err = filepath.Abs(conf.BodyFile)
 	if err != nil {
@@ -185,7 +190,7 @@ func main() {
 			fmt.Println("Автоматически определенный тип файла:", contentType)
 		}
 		attachments = append(attachments, Attachment{filename, contentType, bb})
-		f.Close()
+		_ = f.Close()
 	}
 
 	// Получатели
@@ -220,36 +225,39 @@ func main() {
 			}
 			recipients = append(recipients, email)
 		}
-		f.Close()
+		_ = f.Close()
 	}
 
 	if len(recipients) == 0 {
 		ERR("Нужно добавить хотя бы одного получателя")
 	}
 
-	err = sendSmtp(Mail{
-		Connection: Connection{
-			Host:     conf.Connection.Host,
-			Port:     conf.Connection.Port,
-			Username: conf.Connection.User,
-			Password: conf.Connection.Password,
-			SSL:      conf.Connection.SSL,
-		},
-		From: mail.Address{
-			Name:    conf.From.Name,
-			Address: conf.From.Address,
-		},
-		Recipients: recipients,
-		Message: Message{
-			Subject:     conf.Subject,
-			Body:        msgBody,
-			Attachments: attachments,
-		},
-	})
-	if err != nil {
-		ERR(err)
+	for _, recipient := range recipients {
+		err = sendSmtp(Mail{
+			Connection: Connection{
+				Host:     conf.Connection.Host,
+				Port:     conf.Connection.Port,
+				Username: conf.Connection.User,
+				Password: conf.Connection.Password,
+				SSL:      conf.Connection.SSL,
+			},
+			From: mail.Address{
+				Name:    conf.From.Name,
+				Address: conf.From.Address,
+			},
+			Recipients: []string{recipient},
+			Message: Message{
+				Subject:     conf.Subject,
+				Body:        msgBody,
+				Attachments: attachments,
+			},
+		})
+		if err != nil {
+			ERR(err)
+		}
+		fmt.Printf("Ожидаю %v перед следующей отправкой\n", conf.Delay)
+		time.Sleep(conf.Delay)
 	}
-
 	fmt.Println(`Приложение для отправки почты нескольким адресатам.
 Автор: Черноскутов Михаил <mikhail-chernoskutov@yandex.ru>`)
 }

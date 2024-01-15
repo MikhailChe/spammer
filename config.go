@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -30,11 +31,12 @@ body-file: файл-с-телом-письма.html  # путь относите
 attachments:
   - file: правила участия 2023-01-19.pdf  # путь относительно текущей рабочей директории или абсолютный путь
     name: "2023 - правила участия.pdf" # имя файла, которое будет отображаться у получателя
-	content-type: application/pdf # формат содержимого. Можно не указывать, тогда программа попытается определить автоматически
+    content-type: application/pdf # формат содержимого. Можно не указывать, тогда программа попытается определить автоматически
 
   - file: регламент 2023-01-19.pdf  # путь относительно текущей рабочей директории или абсолютный путь
     name: "2023 - регламент.pdf" # имя файла, которое будет отображаться у получателя
-	content-type: application/pdf # формат содержимого. Можно не указывать, тогда программа попытается определить автоматически
+    content-type: application/pdf # формат содержимого. Можно не указывать, тогда программа попытается определить автоматически
+delay: 5s
 `
 
 type Config struct {
@@ -58,6 +60,7 @@ type Config struct {
 		Name        string `config:"name" yaml:"name"`
 		ContentType string `config:"content-type" yaml:"content-type"`
 	} `config:"attachments" yaml:"attachments"`
+	Delay time.Duration `config:"delay" yaml:"delay"`
 }
 
 func loadConfig(into *Config, filename string) error {

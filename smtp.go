@@ -140,7 +140,7 @@ func sendSmtp(m Mail) error {
 		return err
 	}
 
-	_, err = w.Write([]byte(Message))
+	_, err = w.Write(Message)
 	if err != nil {
 		return err
 	}
