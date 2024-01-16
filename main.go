@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -116,6 +117,13 @@ func main() {
 
 	if conf.Delay != 0 {
 		fmt.Printf("Письма будут отправлены по одному с интервалом %v\n", conf.Delay)
+	}
+
+	fmt.Println("Конфигурация для отладки")
+
+	if bb, err := json.MarshalIndent(conf, "  ", "  "); err == nil {
+		fmt.Println(string(bb))
+		fmt.Println()
 	}
 
 	// Body
