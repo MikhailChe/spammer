@@ -40,3 +40,4 @@ jobs:
       with:
         tag_name: v1.0.${{ github.run_number }}
         files: ./spammer.exe
+        body: "Created by [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
