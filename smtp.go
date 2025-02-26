@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"mime/multipart"
@@ -79,8 +80,10 @@ func sendSmtp(m Mail) error {
 
 	headers := make(http.Header)
 	headers.Set("From", m.From.String())
-	headers.Set("Subject", m.Message.Subject)
+	subject := "=?UTF-8?B?" + base64.StdEncoding.EncodeToString([]byte(m.Message.Subject)) + "?="
+	headers.Set("Subject", subject)
 	headers.Set("Content-Type", fmt.Sprintf("multipart/mixed; boundary=%s", mpart.Boundary()))
+	headers.Set("MIME-Version", "1.0")
 
 	headers.Write(buf)
 	buf.WriteString("\n")

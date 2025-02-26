@@ -65,10 +65,11 @@ func attachmentAsPart(mm *multipart.Writer, a Attachment) error {
 }
 
 func splitHeadersBody(contentType string, msg string) (string, string) {
+	// Пытаемся найти загловки в теле письма
 	rnrn := strings.Index(msg, "\r\n\r\n")
 	nn := strings.Index(msg, "\n\n")
 
-	var firstSplit int = -1
+	var firstSplit = -1
 	if rnrn > 0 {
 		firstSplit = rnrn
 	}
@@ -141,7 +142,7 @@ func main() {
 		if err != nil {
 			ERR(err)
 		}
-		f.Close()
+		_ = f.Close()
 		msgBody.ContentType = conf.ContentType
 		msgBody.Body = string(bb)
 
