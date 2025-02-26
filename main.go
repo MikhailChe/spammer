@@ -19,6 +19,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+var version = "dev-build"
+
 func ERR(s any) {
 	fmt.Println(s)
 	flag.Usage()
@@ -95,6 +97,7 @@ func splitHeadersBody(contentType string, msg string) (string, string) {
 }
 
 func main() {
+	fmt.Println(`Версия приложения:`, version)
 	var err error
 	var conf = new(Config)
 

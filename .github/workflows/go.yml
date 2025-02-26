@@ -15,8 +15,8 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.24'
-    - name: Build
-      run: go build -o spammer.exe -v .
+    - name: Build 
+      run: go build -ldflags "-X main.version=${{ github.run_number }}" -o spammer.exe -v .
     - name: Vet
       run: go vet -v .
     - name: Test
